@@ -14,6 +14,7 @@ import {
 	Downloader,
 	Failure,
 	file,
+	FileProccessorCache,
 	FileService,
 	Logger,
 	MetaRegistry,
@@ -54,9 +55,10 @@ export function mockProjectData(data: Partial<ProjectData> = {}): ProjectData {
 	const externals = data.externals ?? NodeJsExternals
 	const logger = data.logger ?? Logger.create()
 	const downloader = data.downloader ?? new Downloader(cacheRoot, externals, logger)
+	const config = data.config ?? VanillaConfig
 	return {
 		cacheRoot,
-		config: data.config ?? VanillaConfig,
+		config,
 		ctx: data.ctx ?? {},
 		downloader,
 		ensureBindingStarted: data.ensureBindingStarted!,
@@ -69,6 +71,7 @@ export function mockProjectData(data: Partial<ProjectData> = {}): ProjectData {
 		projectRoots: data.projectRoots ?? ['file:///'],
 		roots: data.roots ?? [],
 		symbols: data.symbols ?? new SymbolUtil({}, externals.event.EventEmitter),
+		fileProcessorCache: new FileProccessorCache({ config }),
 	}
 }
 

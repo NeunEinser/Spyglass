@@ -42,7 +42,26 @@ function mcfunction(
 					ctx.err.report(localize('mcfunction.parser.macro.disallowed'), result)
 				}
 			} else {
-				result = command(commandTree, argument, options.commandOptions)(src, ctx)
+				// result = command(commandTree, argument, options.commandOptions)(src, ctx)
+				const start = src.cursor
+				const line = src.readLine()
+
+				const innerSource = new core.Source(line)
+
+				if (ctx.fileCache.has(line)) {
+					const aaa = ctx.fileCache.get(line) as CommandNode
+					result = aaa
+				} else {
+					result = command(commandTree, argument, options.commandOptions)(innerSource, ctx)
+					ctx.fileCache.set(line, result)
+				}
+
+				// innerSource.indexMap = [{
+				// 	inner: core.Range.create(0),
+				// 	outer: core.Range.span(start, start + line.length),
+				// }]
+
+				result = offsetNode(result, start)
 			}
 			ans.children.push(result)
 			src.nextLine()
@@ -52,6 +71,22 @@ function mcfunction(
 
 		return ans
 	}
+}
+
+function offsetNode<T extends core.AstNode>(node: T, offset: number) {
+	const ans = {
+		...node,
+		children: [],
+		range: core.Range.create(node.range.start + offset, node.range.end + offset),
+	}
+
+	if (node.children) {
+		for (const child of node.children) {
+			ans.children.push(offsetNode(child, offset))
+		}
+	}
+
+	return ans
 }
 
 const comment = core.comment({ singleLinePrefixes: new Set(['#']) })

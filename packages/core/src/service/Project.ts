@@ -31,6 +31,7 @@ import type { Dependency } from './Dependency.js'
 import { DependencyKey } from './Dependency.js'
 import { Downloader } from './Downloader.js'
 import { LinterErrorReporter } from './ErrorReporter.js'
+import { FileProccessorCache } from './FileProccessorCache.js'
 import { ArchiveUriSupporter, FileService, FileUriSupporter } from './FileService.js'
 import type { RootUriString } from './fileUtil.js'
 import { fileUtil } from './fileUtil.js'
@@ -116,6 +117,7 @@ export type ProjectData = Pick<
 	| 'roots'
 	| 'symbols'
 	| 'ctx'
+	| 'fileProcessorCache'
 >
 
 /* istanbul ignore next */
@@ -191,6 +193,7 @@ export class Project implements ExternalEventEmitter {
 	readonly profilers: ProfilerFactory
 	readonly projectRoots: RootUriString[]
 	symbols: SymbolUtil
+	readonly fileProcessorCache: FileProccessorCache
 
 	#dependencyRoots: Set<RootUriString> | undefined
 	#dependencyFiles: Set<string> | undefined
@@ -318,6 +321,7 @@ export class Project implements ExternalEventEmitter {
 		this.logger = logger
 		this.profilers = profilers
 		this.projectRoots = projectRoots
+		this.fileProcessorCache = new FileProccessorCache(this)
 
 		this.cacheService = new CacheService(cacheRoot, this)
 		this.#configService = new ConfigService(this, defaultConfig)
@@ -656,6 +660,7 @@ export class Project implements ExternalEventEmitter {
 			this.#textDocumentCacheLength -= doc.getText().length
 		}
 		this.#textDocumentCache.delete(uri)
+		this.fileProcessorCache.delete(uri)
 	}
 	private async read(uri: string): Promise<TextDocument | undefined> {
 		const createTextDocument = async (uri: string): Promise<TextDocument | undefined> => {
@@ -728,7 +733,10 @@ export class Project implements ExternalEventEmitter {
 	}
 
 	private parse(doc: TextDocument): FileNode<AstNode> {
-		const ctx = ParserContext.create(this, { doc })
+		const ctx = ParserContext.create(this, {
+			doc,
+			fileCache: this.fileProcessorCache.get(doc.uri, 'parse'),
+		})
 		const parser = ctx.meta.getParserForLanguageId<AstNode>(ctx.doc.languageId)
 		if (!parser) {
 			return {
@@ -740,7 +748,11 @@ export class Project implements ExternalEventEmitter {
 			}
 		}
 		const src = new Source(doc.getText())
-		return file(parser)(src, ctx)
+		const ans = file(parser)(src, ctx)
+		if (ctx.fileCache) {
+			this.fileProcessorCache.set(doc.uri, 'parse', ctx.fileCache)
+		}
+		return ans
 	}
 
 	@SingletonPromise()
@@ -751,12 +763,18 @@ export class Project implements ExternalEventEmitter {
 		try {
 			this.#bindingInProgressUris.add(doc.uri)
 			const binder = this.meta.getBinder(node.type)
-			const ctx = BinderContext.create(this, { doc })
+			const ctx = BinderContext.create(this, {
+				doc,
+				fileCache: this.fileProcessorCache.get(doc.uri, 'bind'),
+			})
 			ctx.symbols.clear({ contributor: 'binder', uri: doc.uri })
 			await ctx.symbols.contributeAsAsync('binder', async () => {
 				const proxy = StateProxy.create(node)
 				await binder(proxy, ctx)
 				node.binderErrors = ctx.err.dump()
+				if (ctx.fileCache) {
+					this.fileProcessorCache.set(doc.uri, 'bind', ctx.fileCache)
+				}
 			})
 			this.#bindingInProgressUris.delete(doc.uri)
 			this.#symbolUpToDateUris.add(doc.uri)
@@ -772,12 +790,18 @@ export class Project implements ExternalEventEmitter {
 		}
 		try {
 			const checker = this.meta.getChecker(node.type)
-			const ctx = CheckerContext.create(this, { doc })
+			const ctx = CheckerContext.create(this, {
+				doc,
+				fileCache: this.fileProcessorCache.get(doc.uri, 'check'),
+			})
 			ctx.symbols.clear({ contributor: 'checker', uri: doc.uri })
 			await ctx.symbols.contributeAsAsync('checker', async () => {
 				await checker(StateProxy.create(node), ctx)
 				node.checkerErrors = ctx.err.dump()
 				this.lint(doc, node)
+				if (ctx.fileCache) {
+					this.fileProcessorCache.set(doc.uri, 'check', ctx.fileCache)
+				}
 			})
 		} catch (e) {
 			this.logger.error(`[Project] [check] Failed for ${doc.uri} # ${doc.version}`, e)
@@ -810,6 +834,7 @@ export class Project implements ExternalEventEmitter {
 					err: new LinterErrorReporter(ruleName, ruleSeverity, this.ctx['errorSource']),
 					ruleName,
 					ruleValue,
+					fileCache: this.fileProcessorCache.get(doc.uri, 'lint'),
 				})
 
 				traversePreOrder(node, () => true, () => true, (node) => {
@@ -819,6 +844,9 @@ export class Project implements ExternalEventEmitter {
 					}
 				})
 				;(node.linterErrors as LanguageError[]).push(...ctx.err.dump())
+				if (ctx.fileCache) {
+					this.fileProcessorCache.set(doc.uri, 'lint', ctx.fileCache)
+				}
 			}
 		} catch (e) {
 			this.logger.error(`[Project] [lint] Failed for ${doc.uri} # ${doc.version}`, e)

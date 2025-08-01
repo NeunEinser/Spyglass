@@ -42,10 +42,12 @@ export interface ParserContext extends ContextBase {
 	config: Config
 	doc: TextDocument
 	err: ErrorReporter
+	fileCache: Map<string, any>
 }
 interface ParserContextOptions {
 	doc: TextDocument
 	err?: ErrorReporter
+	fileCache?: Map<string, any>
 }
 export namespace ParserContext {
 	export function create(project: ProjectData, opts: ParserContextOptions): ParserContext {
@@ -54,6 +56,7 @@ export namespace ParserContext {
 			config: project.config,
 			doc: opts.doc,
 			err: opts.err ?? new ErrorReporter(project.ctx['errorSource']),
+			fileCache: opts.fileCache ?? new Map(),
 		}
 	}
 }
@@ -63,10 +66,12 @@ export interface ProcessorContext extends ContextBase {
 	doc: TextDocument
 	src: ReadonlySource
 	symbols: SymbolUtil
+	fileCache: Map<string, any>
 }
 interface ProcessorContextOptions {
 	doc: TextDocument
 	src?: ReadonlySource
+	fileCache?: Map<string, any>
 }
 export namespace ProcessorContext {
 	export function create(project: ProjectData, opts: ProcessorContextOptions): ProcessorContext {
@@ -76,6 +81,7 @@ export namespace ProcessorContext {
 			doc: opts.doc,
 			src: opts.src ?? new ReadonlySource(opts.doc.getText()),
 			symbols: project.symbols,
+			fileCache: opts.fileCache ?? new Map(),
 		}
 	}
 }

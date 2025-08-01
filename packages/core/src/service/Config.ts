@@ -131,6 +131,19 @@ export interface EnvConfig {
 	 * **You should only consider enabling this for Windows machines.**
 	 */
 	useFilePolling: boolean
+	/**
+	 * The maximum number of documents that are retained in the file proccessor cache.
+	 *
+	 * This cache is in-memory and never saved to disk and can be used by file processors such as the
+	 * parser or checker to stash their results and avoid parsing the entire document again.
+	 *
+	 * This will speed up the process if you are doing multiple edits in the same files. If you
+	 * typically work with more files simultaneously, increasing this number might improve
+	 * performance for you.
+	 *
+	 * Defaults to 10.
+	 */
+	maxDocumentsInFileProcessorCache: number
 }
 
 export type LinterSeverity = 'hint' | 'information' | 'warning' | 'error'
@@ -374,6 +387,7 @@ export const VanillaConfig: Config = {
 		mcmetaSummaryOverrides: {},
 		enableMcdocCaching: false,
 		useFilePolling: false,
+		maxDocumentsInFileProcessorCache: 10,
 	},
 	format: {
 		blockStateBracketSpacing: { inside: 0 },
